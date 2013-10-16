@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 
+import re
+from functools import partial
+
 from genshi.builder import tag
 from genshi.filters import Transformer
 from trac.core import Component, implements
@@ -10,8 +13,6 @@ from trac.web import HTTPBadRequest, IRequestHandler
 from trac.web.api import ITemplateStreamFilter
 from trac.web.chrome import add_script_data, add_notice
 
-import re
-
 
 class DefaultUserQueryModule(Component):
     implements(IRequestHandler, ITemplateStreamFilter)
@@ -21,7 +22,7 @@ class DefaultUserQueryModule(Component):
     # Js function for replacing standard query links with the default query
     # selected by the user.  This should preferably have been done with a
     # Transformer but that doesn't affect the link in the ribbon.
-    _minimize = lambda x: re.sub(r'\s*([\s+{}();.,])\s*', r'\1', x)
+    _minimize = partial(re.sub, r'\s*([\s+{}();.,])\s*', r'\1')
     _replace_query_links_js = tag.script(_minimize('''
         jQuery(document).ready(function($) {
           $('a[href="' + queryHref + '"]')
@@ -69,7 +70,7 @@ class DefaultUserQueryModule(Component):
                            name='set-as-default',
                            # Redirect the form to this plugin instead of the
                            # query module.
-                           onclick='jQuery(this).closest("form")'
-                                   '.attr("action", "{0}");'.format(
+                           onclick="jQuery(this).closest('form')"
+                                   ".attr('action', '{0}');".format(
                                        req.href('defaultuserquery'))))
         return stream
