@@ -1,90 +1,75 @@
+# -*- coding: utf-8 -*-
+
 from genshi.builder import tag
-from pkg_resources import resource_filename
+from genshi.filters import Transformer
 from trac.core import Component, implements
-from trac.util.presentation import to_json
+from trac.ticket.query import Query
+from trac.ticket.query import QueryModule
 from trac.util.translation import _
-from trac.web import IRequestHandler
+from trac.web import HTTPBadRequest, IRequestHandler
 from trac.web.api import ITemplateStreamFilter
-from trac.web.chrome import (ITemplateProvider, add_ctxtnav, add_script,
-                             add_script_data)
+from trac.web.chrome import add_script_data, add_notice
+
+import re
 
 
 class DefaultUserQueryModule(Component):
-    implements(IRequestHandler, ITemplateStreamFilter, ITemplateProvider)
+    implements(IRequestHandler, ITemplateStreamFilter)
     '''A #define plugin that allows users to select the default query to be
     executed when visiting the ticket page.'''
 
-    # ITemplateProvider methods
-    def get_htdocs_dirs(self):
-        return [('defaultuserquery', resource_filename(__name__, 'htdocs'))]
-
-    def get_templates_dirs(self):
-        return []
+    # Js function for replacing standard query links with the default query
+    # selected by the user.  This should preferably have been done with a
+    # Transformer but that doesn't affect the link in the ribbon.
+    _minimize = lambda x: re.sub(r'\s*([\s+{}();.,])\s*', r'\1', x)
+    _replace_query_links_js = tag.script(_minimize('''
+        jQuery(document).ready(function($) {
+          $('a[href="' + queryHref + '"]')
+            .attr('href', replacementQueryHref);
+        });'''), type_='text/javascript')
 
     # IRequestHandler methods
     def match_request(self, req):
         return req.path_info == '/defaultuserquery'
 
     def process_request(self, req):
-        self._write_default_user_query(req.authname, req.query_string)
-        req.send_header('Content-Type', 'application/json;charset=utf-8')
-        req.send(to_json({
-            'new_default_user_query': req.query_string}))
+
+        if req.method != 'POST':
+            raise HTTPBadRequest(_("Only POST is supported"))
+        query = Query(self.env,
+                      constraints=QueryModule(self.env)._get_constraints(req),
+                      cols=req.args['col'],
+                      desc=req.args.get('desc', 0),
+                      group=req.args['group'],
+                      groupdesc=req.args.get('groupdesc', 0),
+                      max=req.args['max'],
+                      order=req.args['order'])
+        req.session['default_user_query'] = query.get_href(req.href)
+        add_notice(req, _("Your default query has been changed"))
+        # Let the query system handle the request
+        req.redirect(query.get_href(req.href))
 
     # ITemplateStreamFilter methods
     def filter_stream(self, req, method, filename, stream, data):
-
-        # There will always be at least one link to '/query' on all #define
-        # pages because of the ribbon.
-        add_script(req, 'defaultuserquery/js/defaultuserquery.js')
-        standard_query_href = req.href.query()
-        replacement_query = self._read_default_user_query(req.authname)
-        replacement_query_href = ('{0}?{1}'.format(standard_query_href,
-                                                   replacement_query)
-                                  if replacement_query
-                                  else standard_query_href)
-        add_script_data(req, (
-            # This is needed as a js variable to be able to select all standard
-            # query links
-            ('standard_query_href', standard_query_href),
-            # This will replace the targets of all standard query links
-            ('replacement_query_href', replacement_query_href)))
+        replacement_query_href = req.session.get('default_user_query')
+        if replacement_query_href:
+            # Inject js for replacing all standard query links
+            add_script_data(req, (
+                ('queryHref', req.href.query()),
+                ('replacementQueryHref', replacement_query_href)))
+            stream |= Transformer('html/head').append(
+                self._replace_query_links_js)
         if req.path_info == '/query':
-            # Add a link in the ribbon to save the current query as default
-            add_ctxtnav(req,
-                        tag.a(tag.id(class_="icon-bookmark"),
-                              _("Set as default query"),
-                              id_='make-query-default',
-                              href=req.href('defaultuserquery')))
+            # Add a button to the query form for setting the default query
+            stream |= Transformer('//button[@name="update"]').after(
+                tag.button(tag.i(class_="icon-bookmark icon-white"),
+                           _("Set as default"),
+                           type_='submit',
+                           class_='btn btn-mini btn-success',
+                           name='set-as-default',
+                           # Redirect the form to this plugin instead of the
+                           # query module.
+                           onclick='jQuery(this).closest("form")'
+                                   '.attr("action", "{0}");'.format(
+                                       req.href('defaultuserquery'))))
         return stream
-
-    # Internal methods
-    def _read_default_user_query(self, sid):
-        db = self.env.get_read_db()
-        cursor = db.cursor()
-        cursor.execute('SELECT value FROM session_attribute '
-                       'WHERE sid=%s AND name=%s', (sid, 'default_user_query'))
-        for query, in cursor:
-            return query
-
-    def _write_default_user_query(self, sid, query_string, db=None):
-
-        @self.env.with_transaction(db)
-        def do_write(db):
-            cursor = db.cursor()
-            self.env.log.debug('Attempting to update default query for %s to '
-                               '%s', sid, query_string)
-            cursor.execute(
-                'UPDATE session_attribute SET value=%s '
-                'WHERE sid=%s and name=%s',
-                (query_string, sid, 'default_user_query'))
-
-            if cursor.rowcount < 1:
-                self.env.log.debug('Updating of default user query failed. '
-                                   'Inserting default query %s for %s',
-                                   query_string, sid)
-                cursor.execute(
-                    'INSERT INTO session_attribute '
-                    '(sid, authenticated, name, value) '
-                    'values (%s, %s, %s, %s)',
-                    (sid, 1, 'default_user_query', query_string))

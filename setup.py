@@ -14,11 +14,6 @@ setup(
     license='BSD',
     url='http://define.primeportal.com/',
     packages=['defaultuserquery'],
-    package_data={
-        'defaultuserquery': [
-            'htdocs/js/*.js'
-        ]
-    },
     entry_points={
         'trac.plugins': [
             'defaultuserquery.defaultuserquery = ' +
