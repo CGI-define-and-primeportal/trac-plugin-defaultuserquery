@@ -19,14 +19,23 @@ class DefaultUserQueryModule(Component):
     '''A #define plugin that allows users to select the default query to be
     executed when visiting the ticket page.'''
 
+    _minimize = partial(re.sub, r'\s*([\s+{}();.,])\s*', r'\1')
+
     # Js function for replacing standard query links with the default query
     # selected by the user.  This should preferably have been done with a
     # Transformer but that doesn't affect the link in the ribbon.
-    _minimize = partial(re.sub, r'\s*([\s+{}();.,])\s*', r'\1')
     _replace_query_links_js = tag.script(_minimize('''
         jQuery(document).ready(function($) {
-          $('a[href="' + queryHref + '"]')
-            .attr('href', replacementQueryHref);
+          $('a[href="' + queryHref + '"]').attr('href', replacementQueryHref);
+        });'''), type_='text/javascript')
+
+    # Js function for redirecting the query form from the query module to this
+    # plugin prior to submitting.
+    _redirect_query_form_js = tag.script(_minimize('''
+        jQuery(document).ready(function($) {
+          $('#set-default-query-btn').click(function(event) {
+            $('form#query').attr('action', defaultUserQueryAction);
+          });
         });'''), type_='text/javascript')
 
     # IRequestHandler methods
@@ -52,25 +61,25 @@ class DefaultUserQueryModule(Component):
 
     # ITemplateStreamFilter methods
     def filter_stream(self, req, method, filename, stream, data):
-        replacement_query_href = req.session.get('default_user_query')
-        if replacement_query_href:
+        if 'default_user_query' in req.session:
             # Inject js for replacing all standard query links
             add_script_data(req, (
                 ('queryHref', req.href.query()),
-                ('replacementQueryHref', replacement_query_href)))
+                ('replacementQueryHref', req.session['default_user_query'])))
             stream |= Transformer('html/head').append(
                 self._replace_query_links_js)
         if req.path_info == '/query':
             # Add a button to the query form for setting the default query
             stream |= Transformer('//button[@name="update"]').after(
                 tag.button(tag.i(class_="icon-bookmark icon-white"),
-                           _("Set as default"),
+                           _(" Set as default"),
+                           id_='set-default-query-btn',
                            type_='submit',
                            class_='btn btn-mini btn-success',
-                           name='set-as-default',
-                           # Redirect the form to this plugin instead of the
-                           # query module.
-                           onclick="jQuery(this).closest('form')"
-                                   ".attr('action', '{0}');".format(
-                                       req.href('defaultuserquery'))))
+                           name='set-as-default')).after(' ')
+            # Add js to redirect the form when the button is clicked
+            add_script_data(req, (
+                ('defaultUserQueryAction', req.href('defaultuserquery')),))
+            stream |= Transformer('html/head').append(
+                self._redirect_query_form_js)
         return stream
