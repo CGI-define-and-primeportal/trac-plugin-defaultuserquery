@@ -11,7 +11,7 @@ from trac.ticket.query import QueryModule
 from trac.util.translation import _
 from trac.web import HTTPBadRequest, IRequestHandler
 from trac.web.api import ITemplateStreamFilter
-from trac.web.chrome import add_script_data, add_notice
+from trac.web.chrome import add_ctxtnav, add_notice, add_script_data
 
 
 class DefaultUserQueryModule(Component):
@@ -29,12 +29,12 @@ class DefaultUserQueryModule(Component):
           $('a[href="' + queryHref + '"]').attr('href', replacementQueryHref);
         });'''), type_='text/javascript')
 
-    # Js function for redirecting the query form from the query module to this
-    # plugin prior to submitting.
-    _redirect_query_form_js = tag.script(_minimize('''
+    # Js function for redirecting the query form to this plugin and submitting
+    # it upon pressing the link in the ribbon.
+    _redirect_and_submit_js = tag.script(_minimize('''
         jQuery(document).ready(function($) {
-          $('#set-default-query-btn').click(function(event) {
-            $('form#query').attr('action', defaultUserQueryAction);
+          $('#set-default-query').click(function(event) {
+            $('form#query').attr('action', defaultUserQueryAction).submit();
           });
         });'''), type_='text/javascript')
 
@@ -69,17 +69,14 @@ class DefaultUserQueryModule(Component):
             stream |= Transformer('html/head').append(
                 self._replace_query_links_js)
         if req.path_info == '/query':
-            # Add a button to the query form for setting the default query
-            stream |= Transformer('//button[@name="update"]').after(
-                tag.button(tag.i(class_="icon-bookmark icon-white"),
-                           _(" Set as default"),
-                           id_='set-default-query-btn',
-                           type_='submit',
-                           class_='btn btn-mini btn-success',
-                           name='set-as-default')).after(' ')
-            # Add js to redirect the form when the button is clicked
+            # Add a link to the ribbon for setting the default query
+            add_ctxtnav(req, tag.a(tag.i(class_='icon-bookmark'),
+                                   _(" Set as default"),
+                                   id_='set-default-query',
+                                   title=_("Make this your default query")))
+            # Add js to redirect the form when the link is clicked
             add_script_data(req, (
                 ('defaultUserQueryAction', req.href('defaultuserquery')),))
             stream |= Transformer('html/head').append(
-                self._redirect_query_form_js)
+                self._redirect_and_submit_js)
         return stream
