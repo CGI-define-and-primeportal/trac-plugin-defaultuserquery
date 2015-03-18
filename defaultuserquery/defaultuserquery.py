@@ -70,7 +70,7 @@ class DefaultUserQueryModule(Component):
                 self._replace_query_links_js)
         if req.path_info == '/query':
             # Add a link to the ribbon for setting the default query
-            add_ctxtnav(req, tag.a(tag.i(class_='icon-bookmark'),
+            add_ctxtnav(req, tag.a(tag.i(class_='fa fa-bookmark'),
                                    _(" Set as default"),
                                    id_='set-default-query',
                                    title=_("Make this your default query")))
