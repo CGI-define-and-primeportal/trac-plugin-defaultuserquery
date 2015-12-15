@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# Copyright (C) 2013 CGI Sweden
+# Copyright (C) 2015 CGI
 
 from setuptools import setup
 
@@ -11,6 +11,11 @@ setup(
                 'visiting the ticket page',
     author="Anders Oscarsen",
     author_email="anders.oscarsen@cgi.com",
+    maintainer="CGI CoreTeam",
+    maintainer_email="coreteam.service.desk.se@cgi.com",
+    contact="CGI CoreTeam",
+    contact_email="coreteam.service.desk.se@cgi.com",
+    classifiers=['License :: OSI Approved :: BSD License'],
     license='BSD',
     url='http://define.primeportal.com/',
     packages=['defaultuserquery'],
